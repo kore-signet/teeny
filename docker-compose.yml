@@ -1,0 +1,15 @@
+version: '3'
+
+services:
+  shortener:
+    image: urls
+    ports:
+      - "5000:80"
+    volumes:
+      - db_data:/db
+    environment:
+      - SAFELIST=example.com;example.net
+      - DB_PATH=/db
+
+volumes:
+  db_data:
