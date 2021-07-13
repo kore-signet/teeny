@@ -1,3 +1,4 @@
 quart
 lmdb
 tldextract
+Quart-CORS
