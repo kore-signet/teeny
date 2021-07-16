@@ -2,6 +2,7 @@ from typing import Union
 from quart import Quart
 import secrets
 import lmdb
+import hashlib
 
 class ShortenDB:
     def __init__(self, app: Quart, path: str) -> None:
@@ -24,11 +25,16 @@ class ShortenDB:
 
     async def set_url(self,url: str) -> str:
         with self._env.begin(write = True) as txn:
-            v = txn.get(url.encode())
+            url_hash = hashlib.sha256()
+            url_hash.update(url.encode())
+            url_hash = url_hash.digest()
+
+            v = txn.get(url_hash)
+
             if v:
                 return v
             else:
                 token = secrets.token_urlsafe(7)
-                txn.put(url.encode(),token.encode())
+                txn.put(url_hash,token.encode())
                 txn.put(token.encode(),url.encode())
                 return token
