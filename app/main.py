@@ -7,7 +7,7 @@ import os
 safelist = os.environ["SAFELIST"].split(";")
 
 app = Quart(__name__)
-app = cors(app, allow_origin="*",allow_methods=["GET","POST"])
+app = cors(app, allow_origin="*",allow_methods=["GET","POST"], expose_headers=["Location"])
 
 db = ShortenDB(app,os.environ["DB_PATH"])
 
