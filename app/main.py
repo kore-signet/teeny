@@ -7,7 +7,7 @@ import os
 safelist = os.environ["SAFELIST"].split(";")
 
 app = Quart(__name__)
-app = cors(app, allow_origin="*",allow_methods=["GET","POST"], expose_headers=["Location"])
+app = cors(app, allow_origin="*",allow_methods=["GET","POST"], expose_headers=["location"])
 
 db = ShortenDB(app,os.environ["DB_PATH"])
 
@@ -16,6 +16,15 @@ async def redirected(token: str):
     res = await db.get_url(token)
     if res:
         return "", 302, {'Location': res}
+    else:
+        return "Not found", 404
+
+# mostly since the location header refuses to work with cors
+@app.route("/lookup/<token>")
+async def lookup(token):
+    res = await db.get_url(token)
+    if res:
+        return res, 200
     else:
         return "Not found", 404
 
