@@ -34,7 +34,7 @@ async def submit():
     if not url:
         return "Please specify a url", 400
     else:
-        if '.'.join(tldextract.extract(url)[:3]) in safelist:
+        if '.'.join(tldextract.extract(url)[:3]) in safelist or '.'.join(tldextract.extract(url)[1:3]) in safelist:
             res = await db.set_url(url)
             return res, 200
         else:
