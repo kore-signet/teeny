@@ -61,16 +61,7 @@ struct UrlSubmission {
 
 #[get("/lookup/<token>")]
 fn lookup(token: &str, db: &State<sled::Db>) -> Result<Either<String, NotFound<&'static str>>> {
-    if let Some(url) = db
-        .get(
-            &base64::decode_config(
-                &token,
-                base64::Config::new(base64::CharacterSet::UrlSafe, false),
-            )
-            .unwrap(),
-        )
-        .map_err(anyhow::Error::from)?
-    {
+    if let Some(url) = db.get(&token.as_bytes()).map_err(anyhow::Error::from)? {
         Ok(Either::Left(String::from_utf8(url.to_vec()).unwrap()))
     } else {
         Ok(Either::Right(NotFound("not found")))
@@ -79,10 +70,7 @@ fn lookup(token: &str, db: &State<sled::Db>) -> Result<Either<String, NotFound<&
 
 #[get("/<token>")]
 fn redirect(token: &str, db: &State<sled::Db>) -> Result<Either<Redirect, NotFound<&'static str>>> {
-    if let Some(url) = db
-        .get(&token.as_bytes())
-        .map_err(anyhow::Error::from)?
-    {
+    if let Some(url) = db.get(&token.as_bytes()).map_err(anyhow::Error::from)? {
         Ok(Either::Left(Redirect::found(
             String::from_utf8(url.to_vec()).unwrap(),
         )))
@@ -114,11 +102,12 @@ fn submit(
         let mut rng = rand::thread_rng();
         loop {
             let id = rng.gen::<[u8; 8]>();
-            if !db.contains_key(&id).map_err(anyhow::Error::from)? {
-                let token = base64::encode_config(
-                    &id,
-                    base64::Config::new(base64::CharacterSet::UrlSafe, false),
-                );
+            let token = base64::encode_config(
+                &id,
+                base64::Config::new(base64::CharacterSet::UrlSafe, false),
+            );
+
+            if !db.contains_key(&token).map_err(anyhow::Error::from)? {
                 db.insert(&token, sub.url.as_bytes())
                     .map_err(anyhow::Error::from)?;
                 db.insert(&hash, token.as_bytes())
@@ -135,10 +124,7 @@ fn rocket() -> _ {
     let figment = rocket.figment();
     let db_path: String = figment.extract_inner("dbpath").expect("missing db path");
 
-    let db = sled::Config::new()
-        .path(&db_path)
-        .open()
-        .unwrap();
+    let db = sled::Config::new().path(&db_path).open().unwrap();
 
     let allowed: Vec<String> = figment
         .extract_inner::<String>("allowlist")
