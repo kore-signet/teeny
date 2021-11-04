@@ -29,5 +29,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/alisww/teeny
-            ghcr.io/alisww/teeny:${{ github.sha }}
+            ghcr.io/alisww/teeny-rs
+            ghcr.io/alisww/teeny-rs:${{ github.sha }}

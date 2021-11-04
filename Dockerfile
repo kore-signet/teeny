@@ -1,10 +1,18 @@
-FROM tiangolo/uvicorn-gunicorn:python3.8-slim
+FROM rust:1.56-slim-buster as builder
 
-WORKDIR /
+WORKDIR /usr/src
 
-RUN apt-get update && apt-get install liblmdb-dev --no-install-recommends -y
+COPY . .
 
-COPY ./app/requirements.txt /
-RUN python3 -m pip install -r requirements.txt
+RUN cargo build --release
 
-COPY ./app /app
+FROM debian:buster-slim
+
+RUN apt-get update && \
+    apt-get dist-upgrade -y && \
+    apt-get install wget -y
+
+COPY --from=builder /usr/src/target/release/teeny .
+COPY --from=builder /usr/src/target/release/import .
+
+CMD ["./teeny"]
