@@ -80,13 +80,7 @@ fn lookup(token: &str, db: &State<sled::Db>) -> Result<Either<String, NotFound<&
 #[get("/<token>")]
 fn redirect(token: &str, db: &State<sled::Db>) -> Result<Either<Redirect, NotFound<&'static str>>> {
     if let Some(url) = db
-        .get(
-            &base64::decode_config(
-                &token,
-                base64::Config::new(base64::CharacterSet::UrlSafe, false),
-            )
-            .unwrap(),
-        )
+        .get(&token.as_bytes())
         .map_err(anyhow::Error::from)?
     {
         Ok(Either::Left(Redirect::found(
@@ -125,7 +119,7 @@ fn submit(
                     &id,
                     base64::Config::new(base64::CharacterSet::UrlSafe, false),
                 );
-                db.insert(&id, sub.url.as_bytes())
+                db.insert(&token, sub.url.as_bytes())
                     .map_err(anyhow::Error::from)?;
                 db.insert(&hash, token.as_bytes())
                     .map_err(anyhow::Error::from)?;
