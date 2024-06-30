@@ -1,4 +1,4 @@
-use std::{fs::File, io::{BufWriter, Write}};
+use std::{fs::File, io::{BufRead, BufReader, BufWriter, Write}};
 
 use either::Either;
 use rand::Rng;
@@ -13,8 +13,11 @@ use rocket::{
 };
 use sha2::{Digest, Sha256};
 use url::Url;
+use rocksdb::{DB, Options};
 
 type Result<T> = std::result::Result<T, rocket::response::Debug<anyhow::Error>>;
+
+const URL_LIMIT: usize = 256_000;
 
 pub struct CORS;
 #[rocket::async_trait]
@@ -62,7 +65,7 @@ struct UrlSubmission {
 }
 
 #[get("/lookup/<token>")]
-fn lookup(token: &str, db: &State<sled::Db>) -> Result<Either<String, NotFound<&'static str>>> {
+fn lookup(token: &str, db: &State<DB>) -> Result<Either<String, NotFound<&'static str>>> {
     if let Some(url) = db.get(&token.as_bytes()).map_err(anyhow::Error::from)? {
         Ok(Either::Left(String::from_utf8(url.to_vec()).unwrap()))
     } else {
@@ -71,10 +74,10 @@ fn lookup(token: &str, db: &State<sled::Db>) -> Result<Either<String, NotFound<&
 }
 
 #[get("/<token>")]
-fn redirect(token: &str, db: &State<sled::Db>) -> Result<Either<Redirect, NotFound<&'static str>>> {
+fn redirect(token: &str, db: &State<DB>) -> Result<Either<Redirect, NotFound<&'static str>>> {
     if let Some(url) = db.get(&token.as_bytes()).map_err(anyhow::Error::from)? {
         Ok(Either::Left(Redirect::found(
-            String::from_utf8(url.to_vec()).unwrap(),
+            String::from_utf8(url).unwrap(),
         )))
     } else {
         Ok(Either::Right(NotFound("not found")))
@@ -85,8 +88,13 @@ fn redirect(token: &str, db: &State<sled::Db>) -> Result<Either<Redirect, NotFou
 fn submit(
     sub: Form<UrlSubmission>,
     allowed: &State<Vec<String>>,
-    db: &State<sled::Db>,
+    db: &State<DB>,
 ) -> Result<(Status, String)> {
+
+    if sub.url.len() > URL_LIMIT {
+        return Ok((Status::UnprocessableEntity, "url too long".to_string()));
+    }
+
     let url = Url::parse(&sub.url).unwrap();
     let domain = addr::parse_domain_name(url.host_str().unwrap()).unwrap();
     if !allowed
@@ -99,7 +107,7 @@ fn submit(
     let hash = Sha256::digest(sub.url.as_bytes());
 
     if let Some(token) = db.get(hash).map_err(anyhow::Error::from)? {
-        Ok((Status::Ok, String::from_utf8(token.to_vec()).unwrap()))
+        Ok((Status::Ok, String::from_utf8(token).unwrap()))
     } else {
         let mut rng = rand::thread_rng();
         loop {
@@ -109,10 +117,10 @@ fn submit(
                 base64::Config::new(base64::CharacterSet::UrlSafe, false),
             );
 
-            if !db.contains_key(&token).map_err(anyhow::Error::from)? {
-                db.insert(&token, sub.url.as_bytes())
+            if !db.key_may_exist(&token) {
+                db.put(&token, sub.url.as_bytes())
                     .map_err(anyhow::Error::from)?;
-                db.insert(&hash, token.as_bytes())
+                db.put(&hash, token.as_bytes())
                     .map_err(anyhow::Error::from)?;
                 return Ok((Status::Ok, token));
             }
@@ -126,22 +134,27 @@ fn rocket() -> _ {
     let figment = rocket.figment();
     let db_path: String = figment.extract_inner("dbpath").expect("missing db path");
 
-    let db = sled::Config::new().path(&db_path).open().unwrap();
+    let mut max_len = 0;
 
-    {
-        let mut kv_out = BufWriter::new(File::create("db.csv").unwrap());
-        for res in db.iter() {
-            let (k,v) = res.unwrap();
-            kv_out.write_all(base64::encode(k).as_bytes()).unwrap();
-            kv_out.write_all(b",").unwrap();
-            kv_out.write_all(base64::encode(v).as_bytes()).unwrap();
-            kv_out.write_all(b"\n").unwrap();
+    let db = DB::open_default(db_path).unwrap();
+    if let Ok(import_path) = figment.extract_inner::<String>("csvimport") {
+        let csv = BufReader::new(File::open(import_path).unwrap());
+        for line in csv.lines() {
+            let line = line.unwrap();
+            let (key, value) = line.split_once(',').unwrap();
+            let (key, value) = (base64::decode(key).unwrap(), base64::decode(value).unwrap());
+            println!("importing {}={}", String::from_utf8_lossy(&key), String::from_utf8_lossy(&value));
+            max_len = std::cmp::max(max_len, key.len());
+            max_len = std::cmp::max(max_len, value.len());
+            db.put(
+                key
+                ,value).unwrap();
+
+     
         }
-    
-        kv_out.flush().unwrap();
     }
 
-    
+    println!("max len = {max_len}");
 
     let allowed: Vec<String> = figment
         .extract_inner::<String>("allowlist")
@@ -156,3 +169,4 @@ fn rocket() -> _ {
         .attach(CORS)
         .mount("/", routes![cors_preflight, lookup, redirect, submit])
 }
+
