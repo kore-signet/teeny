@@ -1,3 +1,5 @@
+use std::{fs::File, io::{BufWriter, Write}};
+
 use either::Either;
 use rand::Rng;
 use rocket::{
@@ -125,6 +127,21 @@ fn rocket() -> _ {
     let db_path: String = figment.extract_inner("dbpath").expect("missing db path");
 
     let db = sled::Config::new().path(&db_path).open().unwrap();
+
+    {
+        let mut kv_out = BufWriter::new(File::create("db.csv").unwrap());
+        for res in db.iter() {
+            let (k,v) = res.unwrap();
+            kv_out.write_all(base64::encode(k).as_bytes()).unwrap();
+            kv_out.write_all(b",").unwrap();
+            kv_out.write_all(base64::encode(v).as_bytes()).unwrap();
+            kv_out.write_all(b"\n").unwrap();
+        }
+    
+        kv_out.flush().unwrap();
+    }
+
+    
 
     let allowed: Vec<String> = figment
         .extract_inner::<String>("allowlist")
